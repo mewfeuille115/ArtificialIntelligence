@@ -3,7 +3,7 @@ using Anthropic.Models.Messages;
 using System.Text;
 using System.Text.Json;
 
-namespace FirstChatBot;
+namespace FirstChatBot.Chatbots;
 
 internal static class ChatbotAnthropic
 {

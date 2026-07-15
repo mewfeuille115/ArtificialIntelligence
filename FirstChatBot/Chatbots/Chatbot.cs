@@ -1,16 +1,12 @@
-﻿using OpenAI.Chat;
+﻿using Microsoft.Extensions.AI;
 using System.Text;
 
-namespace FirstChatBot;
+namespace FirstChatBot.Chatbots;
 
-internal static class ChatbotOpenAI
+internal static class Chatbot
 {
-	internal static async Task RunAsync()
+	internal static async Task RunAsync(IChatClient client)
 	{
-		var model = "gpt-5.4-nano";
-		var key = Environment.GetEnvironmentVariable("OPENAI_KEY");
-		var client = new ChatClient(model, key);
-
 		Console.WriteLine("AI: Hello! You can write your questions or press Enter to exit");
 		Console.WriteLine();
 
@@ -28,13 +24,7 @@ internal static class ChatbotOpenAI
 			Responses must be in plain text. Do not use Markdown formatting.
 			""";
 
-		var systemPromptPython = """
-			You are an expert on Python.
-			You must respond in the same language as the user's question. If you do not know the language, respond in English and always provide examples.
-			Responses must be in plain text. Do not use Markdown formatting.
-			""";
-
-		messages.Add(new SystemChatMessage(systemPromptPython));
+		messages.Add(new ChatMessage(role: ChatRole.System, content: systemPromptCsharp));
 
 		while (true)
 		{
@@ -49,25 +39,21 @@ internal static class ChatbotOpenAI
 				break;
 			}
 
-			messages.Add(new UserChatMessage(entry));
+			messages.Add(new ChatMessage(role: ChatRole.User, content: entry));
 
 			Console.WriteLine();
 			Console.Write("AI: ");
 
-			var stream = client.CompleteChatStreamingAsync(messages);
-
-			await foreach (var update in stream)
+			await foreach (var fragment in client.GetStreamingResponseAsync(messages))
 			{
-				var text = string.Concat(update.ContentUpdate.Select(c => c.Text));
-				stringBuilder.Append(text);
-				Console.Write(text);
+				stringBuilder.Append(fragment);
+				Console.Write(fragment);
 			}
 
-			messages.Add(new AssistantChatMessage(stringBuilder.ToString()));
+			messages.Add(new ChatMessage(role: ChatRole.Assistant, content: stringBuilder.ToString()));
 
 			Console.WriteLine();
 			Console.WriteLine();
 		}
-
 	}
 }
