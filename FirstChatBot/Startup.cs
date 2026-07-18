@@ -1,7 +1,9 @@
 ﻿using Anthropic;
+using FirstChatBot.Services;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OpenAI;
 
 namespace FirstChatBot;
@@ -16,6 +18,14 @@ internal static class Startup
 		var openAIKey = Environment.GetEnvironmentVariable("OPENAI_KEY");
 		var anthropicKey = Environment.GetEnvironmentVariable("ANTHROPIC_KEY");
 		var localKey = "no-required";
+
+		builder.Services.AddTransient<IWeatherService, OpenWeatherService>();
+		builder.Services.AddTransient<EvaluateConditionsService>();
+		builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.None);
+		builder.Services.AddHttpClient();
+
+		builder.Services.AddTransient<FakeGetEmailService>();
+		builder.Services.AddTransient<FakeSendEmailService>();
 
 		builder.Services.AddSingleton<IChatClient>(serviceProvider =>
 		{
@@ -41,24 +51,18 @@ internal static class Startup
 				.AsBuilder()
 				.ConfigureOptions(options =>
 				{
-					options.MaxOutputTokens = 2000;
+					options.MaxOutputTokens = 5000;
 					options.Temperature = 0.7f;
+					options.Tools = [.. Tools.Tools.GetTools(serviceProvider)];
 				})
-				//.Use(async (messages, options, next, cancellationToken) =>
-				//{
-				//	Console.WriteLine();
-				//	Console.ForegroundColor = ConsoleColor.Green;
-				//	Console.WriteLine("Before call to the model...");
-				//	Console.ResetColor();
-
-				//	await next(messages, options, cancellationToken);
-
-				//	Console.WriteLine();
-				//	Console.ForegroundColor = ConsoleColor.Green;
-				//	Console.WriteLine("After call to the model...");
-				//	Console.ResetColor();
-
-				//})
+				.UseFunctionInvocation(null, configuration =>
+				{
+					configuration.IncludeDetailedErrors = true;
+				})
+				.Use(async (messages, options, next, cancellationToken) =>
+				{
+					await next(messages, options, cancellationToken);
+				})
 				.Build(serviceProvider);
 		});
 	}

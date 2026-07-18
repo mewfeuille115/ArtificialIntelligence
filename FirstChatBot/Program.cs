@@ -8,13 +8,13 @@ Utilities.LoadEnvVariables();
 
 // Example usage: dotnet run -- openai gpt-5.4-nano
 // Example usage: dotnet run -- anthropic claude-haiku-4-5
-// Example usage: dotnet run -- local qwopus3.6-27b-v2-mtp
+// Example usage: dotnet run -- local qwythos-9b-claude-mythos-5-1m
 var provider = args.Length > 0 ? args[0].ToLowerInvariant() : "local";
 var model = args.Length > 1
 	? args[1].ToLowerInvariant()
 	: provider switch
 	{
-		"local" => "qwopus3.6-27b-v2-mtp",
+		"local" => "qwythos-9b-claude-mythos-5-1m",
 		"openai" => "gpt-5.4-nano",
 		"anthropic" => "claude-haiku-4-5",
 		_ => throw new ArgumentException($"Proveedor desconocido: {provider}")
