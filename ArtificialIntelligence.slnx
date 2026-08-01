@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="BlazorAI/BlazorAI.csproj" Id="10077621-54c3-44fc-8dbe-327f7d91c2ab" />
   <Project Path="FirstChatBot/FirstChatBot.csproj" />
 </Solution>

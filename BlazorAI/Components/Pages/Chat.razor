@@ -1,0 +1,166 @@
+﻿@page "/"
+@using BlazorAI.DTOs
+@using BlazorAI.Services.Chatbots
+@implements IDisposable
+@inject IChatbot ChatSession
+@inject IJSRuntime JS
+
+<div class="chat-wrapper">
+	<h3 class="chat-title">Chat with AI</h3>
+
+	<div class="chat-messages" @ref="messagesContainer">
+		@foreach (var message in ChatSession.Conversation)
+		{
+			<div class="message @GetCSSClass(message.Role)">
+				<div class="message-header">@GetLabel(message.Role)</div>
+				<div class="message-body">@message.Text</div>
+			</div>
+		}
+
+		@if (ChatSession.PendingApproval is not null)
+		{
+			<div class="approval-tool">
+				<h4>The AI wants to perform a sensitive action:</h4>
+				<p><strong>Tool:</strong> @ChatSession.PendingApproval.ToolName</p>
+
+				@if (ChatSession.PendingApproval.Arguments.Count > 0)
+				{
+					<ul>
+						@foreach (var argumento in ChatSession.PendingApproval.Arguments)
+						{
+							<li><strong>@argumento.Key:</strong> @argumento.Value</li>
+						}
+					</ul>
+				}
+
+				<div class="approval-actions">
+					<button class="btn btn-success"
+							@onclick="Approve"
+							disabled="@ChatSession.IsProcessing">
+						Approve
+					</button>
+
+					<button class="btn btn-danger"
+							@onclick="Decline"
+							disabled="@ChatSession.IsProcessing">
+						Decline
+					</button>
+				</div>
+
+			</div>
+		}
+	</div>
+
+	<EditForm Model="model" OnValidSubmit="Send">
+		<div class="chat-entry">
+			<input class="form-control"
+					@bind="model.Text"
+					@bind:event="oninput"
+					placeholder="Write your message..." />
+
+			<button type="submit"
+					class="btn btn-primary"
+					disabled="@DisableSend">
+				Send
+			</button>
+
+			<button type="button"
+					class="btn btn-outline-secondary"
+					@onclick="Cancel"
+					disabled="@(!ChatSession.IsProcessing)">
+				Cancel
+			</button>
+		</div>
+	</EditForm>
+</div>
+
+@code {
+	private readonly ChatInputModel model = new();
+	private ElementReference messagesContainer;
+	private bool needsScroll;
+
+	private bool DisableSend =>
+		ChatSession.IsProcessing ||
+		ChatSession.PendingApproval is not null ||
+		string.IsNullOrWhiteSpace(model.Text);
+
+	protected override void OnInitialized()
+	{
+		ChatSession.OnChange += HandleChatChange;
+	}
+
+	private void HandleChatChange()
+	{
+		needsScroll = true;
+		InvokeAsync(StateHasChanged);
+	}
+
+	
+	private async Task Approve()
+	{
+		needsScroll = true;
+		await ChatSession.ResolveApprovalAsync(true);
+	}
+
+	private async Task Decline()
+	{
+		needsScroll = true;
+		await ChatSession.ResolveApprovalAsync(false);
+	}
+
+	private async Task Send()
+	{
+		var text = model.Text?.Trim();
+
+		if (string.IsNullOrWhiteSpace(text))
+		{
+			return;
+		}
+
+		model.Text = string.Empty;
+		needsScroll = true;
+
+		await ChatSession.SendMessageAsync(text);
+	}
+
+	private Task Cancel()
+	{
+		ChatSession.CancelActualResponse();
+		return Task.CompletedTask;
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (needsScroll)
+		{
+			await JS.InvokeVoidAsync("chatScroll.scrollToBottom", messagesContainer);
+			needsScroll = false;
+		}
+	}
+
+	private static string GetLabel(MessageRole role) => role switch
+	{
+		MessageRole.User => "You",
+		MessageRole.AI => "AI",
+		MessageRole.System => "System",
+		_ => role.ToString(),
+	};
+
+	private static string GetCSSClass(MessageRole role) => role switch
+	{
+		MessageRole.User => "user",
+		MessageRole.AI => "assistant",
+		MessageRole.System => "system",
+		_ => role.ToString(),
+	};
+
+	public void Dispose()
+	{
+		ChatSession.OnChange -= HandleChatChange;
+	}
+
+	private class ChatInputModel
+	{
+		public string Text { get; set; } = string.Empty;
+	}
+}
