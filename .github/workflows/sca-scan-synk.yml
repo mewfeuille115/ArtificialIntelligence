@@ -44,5 +44,4 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk monitor --all-projects --detection-depth=4 \
-            --project-name=ArtificialIntelligence
+          snyk monitor --all-projects --detection-depth=4
