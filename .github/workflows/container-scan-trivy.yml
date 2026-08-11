@@ -1,0 +1,35 @@
+name: Trivy container scan
+
+on:
+  workflow_call:
+
+jobs:
+  scan:
+    name: Trivy container scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            -t blazorai:pr-${{ github.event.pull_request.number }} \
+            -f BlazorAI/Dockerfile \
+            BlazorAI
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: blazorai:pr-${{ github.event.pull_request.number }}
+          format: sarif
+          output: trivy.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy

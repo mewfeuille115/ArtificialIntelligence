@@ -1,0 +1,48 @@
+name: PR security checks
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-security-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  detect-secrets:
+    uses: ./.github/workflows/secret-scan-yelp.yml
+
+  sca-snyk:
+    uses: ./.github/workflows/sca-scan-synk.yml
+    secrets: inherit
+
+  sast-snyk:
+    uses: ./.github/workflows/sast-scan-synk.yml
+    secrets: inherit
+
+  container-trivy:
+    uses: ./.github/workflows/container-scan-trivy.yml
+
+  security-gate:
+    name: Security gate
+    needs: [detect-secrets, sca-snyk, sast-snyk, container-trivy]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Evaluate results of the 4 checks
+        run: |
+          echo "detect-secrets:   ${{ needs.detect-secrets.result }}"
+          echo "sca-snyk:         ${{ needs.sca-snyk.result }}"
+          echo "sast-snyk:        ${{ needs.sast-snyk.result }}"
+          echo "container-trivy:  ${{ needs.container-trivy.result }}"
+
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "::error::At least one security check failed. Merge blocked."
+            exit 1
+          fi
+
+          echo "All security checks passed."
