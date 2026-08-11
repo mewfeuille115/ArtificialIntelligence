@@ -38,3 +38,11 @@ jobs:
         with:
           sarif_file: snyk-sca.sarif
           category: snyk-sca
+
+      - name: Publish snapshot to Snyk dashboard
+        if: always()
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk monitor --all-projects --detection-depth=4 \
+            --project-name=ArtificialIntelligence
