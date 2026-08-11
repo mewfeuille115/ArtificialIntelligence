@@ -12,7 +12,7 @@ jobs:
 
       - name: Build image
         run: |
-          docker build \
+          docker build --pull \
             -t blazorai:pr-${{ github.event.pull_request.number }} \
             -f BlazorAI/Dockerfile \
             .
