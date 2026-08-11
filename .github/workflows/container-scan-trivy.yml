@@ -15,7 +15,7 @@ jobs:
           docker build \
             -t blazorai:pr-${{ github.event.pull_request.number }} \
             -f BlazorAI/Dockerfile \
-            BlazorAI
+            .
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@v0.36.0
@@ -28,8 +28,8 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif
           category: trivy
