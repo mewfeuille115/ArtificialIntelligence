@@ -1,4 +1,5 @@
 ﻿using BlazorAI.DTOs;
+using BlazorAI.Utilities;
 using Microsoft.Extensions.AI;
 using System.Text;
 
@@ -6,10 +7,12 @@ namespace BlazorAI.Services.Chatbots;
 
 public class Chatbot : IChatbot
 {
-	private readonly IChatClient client;
+	private string model;
+	private readonly IChatClientFactory chatClientFactory;
 	private readonly ChatOptions chatOptions;
 	private readonly List<ChatMessage> messages = [];
 	private readonly Queue<ToolApprovalRequestContent> pendingApprovals = new();
+	private CancellationTokenSource? actualCts;
 
 	public List<ChatMessageUI> Conversation { get; } = [];
 	public bool IsProcessing { get; private set; }
@@ -17,9 +20,10 @@ public class Chatbot : IChatbot
 
 	public event Action? OnChange;
 
-	public Chatbot(IChatClient client, ChatOptions chatOptions)
+	public Chatbot(IChatClientFactory chatClientFactory, ChatOptions chatOptions)
 	{
-		this.client = client;
+		model = AIModels.GetDefaultModel;
+		this.chatClientFactory = chatClientFactory;
 		this.chatOptions = chatOptions;
 		var generalSystemPrompt = """
 			You are an assistant that answers general questions.
@@ -41,6 +45,10 @@ public class Chatbot : IChatbot
 
 	public void CancelActualResponse()
 	{
+		if (IsProcessing)
+		{
+			actualCts?.Cancel();
+		}
 	}
 
 	public async Task SendMessageAsync(string userText, CancellationToken cancellationToken = default)
@@ -55,31 +63,67 @@ public class Chatbot : IChatbot
 			return;
 		}
 
-		IsProcessing = true;
-
-		Conversation.Add(new ChatMessageUI
+		try
 		{
-			Role = MessageRole.User,
-			Text = userText,
-		});
+			IsProcessing = true;
+			actualCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-		messages.Add(new ChatMessage(role: ChatRole.User, content: userText));
+			Conversation.Add(new ChatMessageUI
+			{
+				Role = MessageRole.User,
+				Text = userText,
+			});
 
-		Conversation.Add(new ChatMessageUI
+			messages.Add(new ChatMessage(role: ChatRole.User, content: userText));
+
+			Conversation.Add(new ChatMessageUI
+			{
+				Role = MessageRole.AI,
+				Text = string.Empty,
+			});
+
+			NotifyChange();
+			await ProcessResponse(actualCts.Token);
+		}
+		catch (OperationCanceledException)
 		{
-			Role = MessageRole.AI,
-			Text = string.Empty,
-		});
+			HandleCancelledOperation();
+		}
+		finally
+		{
+			HandleFinally();
+		}
+	}
 
-		NotifyChange();
-		await ProcessResponse(cancellationToken);
+	private void HandleCancelledOperation()
+	{
+		if (Conversation.Count > 0 && Conversation[^1].Role == MessageRole.AI)
+		{
+			if (string.IsNullOrWhiteSpace(Conversation[^1].Text))
+			{
+				Conversation[^1].Text = "[The response was cancelled]";
+			}
+			else
+			{
+				Conversation[^1].Text += " [Cancelled]";
+			}
+		}
+	}
+
+	private void HandleFinally()
+	{
+		actualCts?.Dispose();
+		actualCts = null;
 		IsProcessing = false;
+		NotifyChange();
 	}
 
 	private async Task ProcessResponse(CancellationToken cancellationToken = default)
 	{
 		var updates = new List<ChatResponseUpdate>();
 		var builder = new StringBuilder();
+
+		var client = chatClientFactory.Create(model);
 
 		await foreach (var update in client.GetStreamingResponseAsync(
 			messages,
@@ -155,38 +199,49 @@ public class Chatbot : IChatbot
 			return;
 		}
 
-		IsProcessing = true;
-		var approvalResponse = PendingApproval.ApprovalRequest.CreateResponse(approved);
-		messages.Add(new ChatMessage(ChatRole.User, [approvalResponse]));
-		PendingApproval = null;
-
-		Conversation.Add(new ChatMessageUI
+		try
 		{
-			Role = MessageRole.System,
-			Text = approved
-				? "Action approved by the user."
-				: "Action denied by the user.",
-		});
+			IsProcessing = true;
+			actualCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			var approvalResponse = PendingApproval.ApprovalRequest.CreateResponse(approved);
+			messages.Add(new ChatMessage(ChatRole.User, [approvalResponse]));
+			PendingApproval = null;
 
-		PendingApproval = null;
-		ShowNextPendingApproval();
+			Conversation.Add(new ChatMessageUI
+			{
+				Role = MessageRole.System,
+				Text = approved
+					? "Action approved by the user."
+					: "Action denied by the user.",
+			});
 
-		if (PendingApproval is not null)
-		{
-			IsProcessing = false;
+			PendingApproval = null;
+			ShowNextPendingApproval();
+
+			if (PendingApproval is not null)
+			{
+				IsProcessing = false;
+				NotifyChange();
+				return;
+			}
+
+			Conversation.Add(new ChatMessageUI
+			{
+				Role = MessageRole.AI,
+				Text = string.Empty,
+			});
+
 			NotifyChange();
-			return;
+			await ProcessResponse(actualCts.Token);
 		}
-
-		Conversation.Add(new ChatMessageUI
+		catch (OperationCanceledException)
 		{
-			Role = MessageRole.AI,
-			Text = string.Empty,
-		});
-
-		NotifyChange();
-		await ProcessResponse(cancellationToken);
-		IsProcessing = false;
+			HandleCancelledOperation();
+		}
+		finally
+		{
+			HandleFinally();
+		}
 	}
 
 	private static string ConvertFunctionName(string name)
@@ -196,5 +251,10 @@ public class Chatbot : IChatbot
 			"SendEmail" => "Send Email",
 			_ => name,
 		};
+	}
+
+	public void SetModel(string model)
+	{
+		this.model = model;
 	}
 }
