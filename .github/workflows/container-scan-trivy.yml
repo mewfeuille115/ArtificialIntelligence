@@ -17,14 +17,14 @@ jobs:
             -f BlazorAI/Dockerfile \
             .
 
-      - name: Run Trivy
+      - name: Run Trivy (Generate SARIF for GitHub)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: blazorai:pr-${{ github.event.pull_request.number }}
           format: sarif
           output: trivy.sarif
           severity: MEDIUM,HIGH,CRITICAL
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
 
       - name: Upload SARIF
@@ -32,4 +32,13 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif
-          category: trivy
+          category: trivy-container
+
+      - name: Run Trivy (Show table and block PR)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: blazorai:pr-${{ github.event.pull_request.number }}
+          format: table
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
