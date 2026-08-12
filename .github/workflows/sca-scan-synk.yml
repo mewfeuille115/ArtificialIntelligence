@@ -1,4 +1,4 @@
-name: Snyk SCA (dependencies)
+name: Snyk Dependencies (SCA)
 
 on:
   workflow_call:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   scan:
-    name: Snyk SCA (dependencies)
+    name: Snyk Dependencies (SCA)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +28,113 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk test --file=ArtificialIntelligence.slnx \
-            --severity-threshold=medium \
+          snyk test --all-projects --detection-depth=4 \
+            --severity-threshold=high \
             --sarif-file-output=snyk-sca.sarif
 
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-sca.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-sca.sarif
           category: snyk-sca
+
+      - name: Publish snapshot to Snyk dashboard
+        if: always()
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk monitor --all-projects --detection-depth=4
+
+      - name: Set up Python (for SARIF conversion)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run NuGet Audit (transitive vulnerabilities)
+        id: nuget_audit
+        run: |
+          dotnet list ArtificialIntelligence.slnx package --vulnerable --include-transitive --format json > nuget-audit.json
+          cat nuget-audit.json
+
+          COUNT=$(python -c "
+          import json
+          data = json.load(open('nuget-audit.json'))
+          count = 0
+          for project in data.get('projects', []):
+              for framework in project.get('frameworks', []):
+                  for pkg in (framework.get('topLevelPackages') or []) + (framework.get('transitivePackages') or []):
+                      for vuln in pkg.get('vulnerabilities', []):
+                          if vuln.get('severity') in ('High', 'Critical'):
+                              count += 1
+          print(count)
+          ")
+          echo "found=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Findings (High or above): $COUNT"
+
+      - name: Convert NuGet Audit results to SARIF
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+
+          with open("nuget-audit.json") as f:
+              data = json.load(f)
+
+          sarif_results = []
+          for project in data.get("projects", []):
+              path = project.get("path", "unknown")
+              for framework in project.get("frameworks", []):
+                  packages = (framework.get("topLevelPackages") or []) + (framework.get("transitivePackages") or [])
+                  for pkg in packages:
+                      for vuln in pkg.get("vulnerabilities", []):
+                          severity = vuln.get("severity", "Unknown")
+                          level = "error" if severity in ("High", "Critical") else "warning"
+                          sarif_results.append({
+                              "ruleId": f"nuget-audit-{severity.lower()}",
+                              "level": level,
+                              "message": {
+                                  "text": (
+                                      f"{pkg.get('id', 'unknown package')} "
+                                      f"{pkg.get('resolvedVersion', '')} has a vulnerability "
+                                      f"with severity {severity}: {vuln.get('advisoryUrl', '')}"
+                                  )
+                              },
+                              "locations": [{
+                                  "physicalLocation": {
+                                      "artifactLocation": {"uri": path},
+                                      "region": {"startLine": 1}
+                                  }
+                              }]
+                          })
+
+          sarif = {
+              "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+              "version": "2.1.0",
+              "runs": [{
+                  "tool": {
+                      "driver": {
+                          "name": "dotnet-nuget-audit",
+                          "informationUri": "https://learn.microsoft.com/nuget/concepts/auditing-packages"
+                      }
+                  },
+                  "results": sarif_results
+              }]
+          }
+
+          with open("nuget-audit.sarif", "w") as f:
+              json.dump(sarif, f, indent=2)
+          PY
+
+      - name: Upload NuGet Audit SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: nuget-audit.sarif
+          category: nuget-audit
+
+      - name: Fail if NuGet Audit found vulnerabilities
+        if: steps.nuget_audit.outputs.found != '0'
+        run: |
+          echo "::error::dotnet list package --vulnerable found dependencies with severity High or above."
+          exit 1

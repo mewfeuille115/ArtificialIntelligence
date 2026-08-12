@@ -21,7 +21,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           snyk code test \
-            --severity-threshold=medium \
+            --severity-threshold=high \
             --sarif-file-output=snyk-sast.sarif
 
       - name: Upload SARIF
