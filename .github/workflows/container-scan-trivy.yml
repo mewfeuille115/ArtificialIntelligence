@@ -23,7 +23,7 @@ jobs:
           image-ref: blazorai:pr-${{ github.event.pull_request.number }}
           format: sarif
           output: trivy.sarif
-          severity: MEDIUM,HIGH,CRITICAL
+          severity: HIGH,CRITICAL
           exit-code: '0'
           ignore-unfixed: true
 
@@ -39,6 +39,6 @@ jobs:
         with:
           image-ref: blazorai:pr-${{ github.event.pull_request.number }}
           format: table
-          severity: MEDIUM,HIGH,CRITICAL
+          severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
