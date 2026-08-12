@@ -74,3 +74,8 @@
 	border-top: 1px solid #d0d7de;
 	background-color: #fff;
 }
+
+.selector-model {
+	width: 220px;
+	flex-shrink: 0;
+}

@@ -1,6 +1,7 @@
 ﻿@page "/"
 @using BlazorAI.DTOs
 @using BlazorAI.Services.Chatbots
+@using BlazorAI.Utilities
 @implements IDisposable
 @inject IChatbot ChatSession
 @inject IJSRuntime JS
@@ -53,6 +54,17 @@
 
 	<EditForm Model="model" OnValidSubmit="Send">
 		<div class="chat-entry">
+			<select class="form-select selector-model"
+					@bind="selectedModel"
+					@bind:after="OnModelChange"
+					disabled="@(ChatSession.IsProcessing || ChatSession.PendingApproval is not null)">
+
+					@foreach (var item in availableModels)
+					{
+						<option value="@item">@item</option>
+					}
+			</select>
+
 			<input class="form-control"
 					@bind="model.Text"
 					@bind:event="oninput"
@@ -78,6 +90,14 @@
 	private readonly ChatInputModel model = new();
 	private ElementReference messagesContainer;
 	private bool needsScroll;
+
+	private readonly List<string> availableModels = AIModels.GetAvailableModels().ToList();
+	private string selectedModel = AIModels.GetDefaultModel;
+
+	private void OnModelChange()
+	{
+		ChatSession.SetModel(selectedModel);
+	}
 
 	private bool DisableSend =>
 		ChatSession.IsProcessing ||

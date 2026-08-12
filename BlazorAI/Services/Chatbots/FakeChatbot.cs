@@ -40,4 +40,8 @@ public class FakeChatbot : IChatbot
 	{
 		return Task.CompletedTask;
 	}
+
+	public void SetModel(string model)
+	{
+	}
 }
